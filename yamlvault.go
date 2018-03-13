@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -46,7 +47,7 @@ func (k *KMS) Name() string {
 	return fmt.Sprintf("projects/%s/locations/%s/keyRings/%s/cryptoKeys/%s", k.ProjectID, k.LocationID, k.KeyRingID, k.KeyName)
 }
 
-func (k *KMS) Encrypt(r io.Reader) (io.Writer, error) {
+func (k *KMS) Encrypt(r io.Reader) (io.Reader, error) {
 	m, err := unmarshal(r)
 	if err != nil {
 		return nil, err
@@ -54,8 +55,13 @@ func (k *KMS) Encrypt(r io.Reader) (io.Writer, error) {
 
 	result := make(map[interface{}]interface{})
 	for key, value := range m {
+		b, err := toByte(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "encrypt: failed to encrypt. CryptoKey=%s", k.Name())
+		}
+
 		resp, err := k.Service.Projects.Locations.KeyRings.CryptoKeys.Encrypt(k.Name(), &cloudkms.EncryptRequest{
-			Plaintext: base64.StdEncoding.EncodeToString([]byte(value.(string))),
+			Plaintext: base64.StdEncoding.EncodeToString(b),
 		}).Do()
 		if err != nil {
 			return nil, errors.Wrapf(err, "encrypt: failed to encrypt. CryptoKey=%s", k.Name())
@@ -66,7 +72,7 @@ func (k *KMS) Encrypt(r io.Reader) (io.Writer, error) {
 	return marshal(result)
 }
 
-func (k *KMS) Decrypt(r io.Reader) (io.Writer, error) {
+func (k *KMS) Decrypt(r io.Reader) (io.Reader, error) {
 	m, err := unmarshal(r)
 	if err != nil {
 		return nil, err
@@ -101,11 +107,21 @@ func unmarshal(r io.Reader) (map[interface{}]interface{}, error) {
 	return m, nil
 }
 
-func marshal(m map[interface{}]interface{}) (io.Writer, error) {
+func marshal(m map[interface{}]interface{}) (io.Reader, error) {
 	b, err := yaml.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
 
 	return bytes.NewBuffer(b), nil
+}
+
+func toByte(v interface{}) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	err := enc.Encode(v)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
