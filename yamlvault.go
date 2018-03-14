@@ -84,9 +84,14 @@ func (k *KMS) Decrypt(r io.Reader) (io.Reader, error) {
 			Ciphertext: value.(string),
 		}).Do()
 		if err != nil {
-			return nil, errors.Wrapf(err, "encrypt: failed to encrypt. CryptoKey=%s", k.Name())
+			return nil, errors.Wrapf(err, "decrypt: failed to decrypt. CryptoKey=%s", k.Name())
 		}
-		result[key] = resp.Plaintext
+
+		t, err := base64.StdEncoding.DecodeString(resp.Plaintext)
+		if err != nil {
+			return nil, errors.Wrap(err, "decrypt: failed base64 decode")
+		}
+		result[key] = string(t)
 	}
 
 	return marshal(result)
